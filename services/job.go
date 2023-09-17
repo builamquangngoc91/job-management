@@ -92,7 +92,11 @@ func (jm *JobManagement) loadAndHandeJobs(ctx context.Context, workerID workerID
 	err := jm.db.Transaction(func(tx *gorm.DB) error {
 		result := tx.Table("jobs").
 			Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("status = ? AND run_at <= NOW() AND executed_times < times", "READY").
+			Where(`
+				status = 'READY' 
+				AND (run_at IS NULL OR run_at <= NOW())
+				AND executed_times < times
+			`).
 			First(&job).
 			Order("level DESC, run_at ASC").
 			WithContext(ctx)
@@ -103,9 +107,11 @@ func (jm *JobManagement) loadAndHandeJobs(ctx context.Context, workerID workerID
 
 		updateJobResult := tx.Table("jobs").
 			Where("id = ?", job.ID).
-			Update("status", "PICKED").
-			Update("executed_times", job.ExecutedTimes+1).
-			Update("execute_at", "NOW()").
+			Updates(map[string]interface{}{
+				"status":         "PICKED",
+				"executed_times": job.ExecutedTimes + 1,
+				"execute_at":     "NOW()",
+			}).
 			WithContext(ctx)
 		if err := updateJobResult.Error; err != nil {
 			fmt.Printf("updateJobResult error: %s\n", err.Error())
@@ -142,7 +148,11 @@ func (jm *JobManagement) RunJobWatcher(ctx context.Context) {
 func (jm *JobManagement) loadAndUpdateJobs(ctx context.Context) {
 	err := jm.db.Transaction(func(tx *gorm.DB) error {
 		updateJobResult := tx.Table("jobs").
-			Where("status IN ('PICKED', 'FAILED') AND execute_at <= NOW() - INTERVAL '2 seconds' AND executed_times < times").
+			Where(`
+				status IN ('PICKED', 'FAILED') 
+				AND (execute_at + (ttl || ' milliseconds')::interval <= NOW() - INTERVAL '2 seconds')
+				AND executed_times < times
+			`).
 			Updates(map[string]interface{}{
 				"status": "READY",
 				"logs":   nil,
