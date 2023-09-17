@@ -59,7 +59,7 @@ func main() {
 	controller := controllers.NewController(r, db)
 	controller.Routes()
 
-	r.Run("localhost:8080")
+	r.Run("0.0.0.0:8080")
 
 	signChan := make(chan os.Signal, 1)
 	signal.Notify(signChan, os.Interrupt, syscall.SIGTERM)
